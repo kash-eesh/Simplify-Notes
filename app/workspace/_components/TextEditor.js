@@ -1,49 +1,61 @@
+'use client';
+
 import Placeholder from '@tiptap/extension-placeholder'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import EditorExtensions from './EditorExtensions'
-import { useMutation, useQueries, useQuery } from 'convex/react'
+import { useQuery } from 'convex/react'
 import { api } from '@/convex/_generated/api'
-import { useUser } from '@clerk/nextjs'
 import WorkspaceHeader from './WorkspaceHeader'
 
-function TextEditor({fileId,setEditorContent }) {
+function TextEditor({ fileId, setEditorContent }) {
+  // Add mounting state
+  const [isMounted, setIsMounted] = useState(false);
 
-    const notes=useQuery(api.notes.GetNotes,{
-        fileId:fileId,
-    })
+  const notes = useQuery(api.notes.GetNotes, {
+    fileId: fileId,
+  });
 
-
-    console.log('notes are: ',notes);
-
-    const editor = useEditor({
-        extensions: [StarterKit,
-            Placeholder.configure({
-                placeholder:"Start taking your notes here..."
-            })
-        ],
-        editorProps:{
-            attributes:{
-                class:'focus:outline-none h-screen p-5'
-            }
-        },
-        onUpdate: ({ editor }) => {
-          // Whenever the editor content changes, we update the state in Workspace component
-          setEditorContent(editor.getHTML())
-        },
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: "Start taking your notes here..."
       })
+    ],
+    editorProps: {
+      attributes: {
+        class: 'focus:outline-none h-screen p-5'
+      }
+    },
+    onUpdate: ({ editor }) => {
+      setEditorContent(editor.getHTML())
+    },
+    // Add this line to fix hydration
+    immediatelyRender: false,
+  });
 
-      useEffect(()=>{
-        editor&&editor.commands.setContent(notes) 
-      },[notes&&editor])
+  // Handle mounting
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
-      
+  // Handle content updates
+  useEffect(() => {
+    if (editor && notes) {
+      editor.commands.setContent(notes);
+    }
+  }, [notes, editor]);
+
+  // Don't render until mounted
+  if (!isMounted) {
+    return null; // Or a loading spinner/placeholder
+  }
 
   return (
     <div>
-       
-        <EditorExtensions editor={editor}/>
+      <EditorExtensions editor={editor} />
       <div className='overflow-scroll h-[88vh]'>
         <EditorContent editor={editor} />
       </div>
@@ -51,4 +63,5 @@ function TextEditor({fileId,setEditorContent }) {
   )
 }
 
-export default TextEditor
+// Export with dynamic import in parent component
+export default TextEditor;

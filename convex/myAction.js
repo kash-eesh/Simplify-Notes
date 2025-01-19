@@ -1,4 +1,4 @@
-// "use node";
+"use node";
 
 import { ConvexVectorStore } from "@langchain/community/vectorstores/convex";
 
