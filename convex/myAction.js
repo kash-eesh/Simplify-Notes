@@ -1,56 +1,94 @@
 "use node";
-
 import { ConvexVectorStore } from "@langchain/community/vectorstores/convex";
-
-import { action, query } from "./_generated/server.js";
+import { action } from "./_generated/server.js";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { TaskType } from "@google/generative-ai";
 import { v } from "convex/values";
 
+// Helper function to create embeddings instance
+const createEmbeddings = () => {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "GOOGLE_API_KEY not found. Please set it in your Convex environment variables."
+    );
+  }
+
+  return new GoogleGenerativeAIEmbeddings({
+    apiKey,
+    model: "text-embedding-004",
+    taskType: TaskType.RETRIEVAL_DOCUMENT,
+    title: "Document title",
+  });
+};
+
 export const ingest = action({
   args: {
-    splitText:v.any(),
-    fileId:v.string()
+    splitText: v.any(),
+    fileId: v.string()
   },
   handler: async (ctx, args) => {
-    const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
-    const metadata = { fileId: args.fileId };
-    await ConvexVectorStore.fromTexts(
-      args.splitText,//array
-      metadata, //string
-      new GoogleGenerativeAIEmbeddings({
-        apiKey: process.env.GOOGLE_API_KEY, 
-        model: "text-embedding-004", // 768 dimensions
-        taskType: TaskType.RETRIEVAL_DOCUMENT,
-        title: "Document title",
-      }),
-      { ctx }
+    try {
+      const embeddings = createEmbeddings();
+      const metadata = { fileId: args.fileId };
 
-    );
+      if (!Array.isArray(args.splitText) || args.splitText.length === 0) {
+        throw new Error("splitText must be a non-empty array");
+      }
 
-    return "completed"
+      await ConvexVectorStore.fromTexts(
+        args.splitText,
+        metadata,
+        embeddings,
+        { ctx }
+      );
+
+      return {
+        success: true,
+        message: "Text ingestion completed successfully"
+      };
+    } catch (error) {
+      // Log the error for debugging (will appear in Convex dashboard)
+      console.error("Ingest error:", error);
+      
+      return {
+        success: false,
+        error: error.message || "An error occurred during text ingestion"
+      };
+    }
   },
 });
 
-
 export const search = action({
-    args: {
-        query: v.string(),
-        fileId: v.string()
-    },
-    handler: async(ctx, args) => {
-        const vectorStore = new ConvexVectorStore(
-            new GoogleGenerativeAIEmbeddings({
-                apiKey: process.env.GOOGLE_API_KEY, 
-                model: "text-embedding-004", // 768 dimensions
-                taskType: TaskType.RETRIEVAL_DOCUMENT,
-                title: "Document title",
-              })
-            , { ctx });
+  args: {
+    query: v.string(),
+    fileId: v.string()
+  },
+  handler: async (ctx, args) => {
+    try {
+      if (!args.query.trim()) {
+        throw new Error("Search query cannot be empty");
+      }
 
-        const resultOne = await (await vectorStore.similaritySearch(args.query, 1))
-        .filter((q)=>q.metadata.fileId == args.fileId)
-        return JSON.stringify(resultOne);
+      const embeddings = createEmbeddings();
+      const vectorStore = new ConvexVectorStore(embeddings, { ctx });
+
+      const searchResults = await vectorStore.similaritySearch(args.query, 1);
+      const filteredResults = searchResults.filter(
+        (result) => result.metadata.fileId === args.fileId
+      );
+
+      return {
+        success: true,
+        results: filteredResults
+      };
+    } catch (error) {
+      console.error("Search error:", error);
+      
+      return {
+        success: false,
+        error: error.message || "An error occurred during search"
+      };
     }
+  }
 });
-
